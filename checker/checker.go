@@ -1,37 +1,35 @@
 // Package checker validates TRON vanity address patterns.
 //
 // Uses Go's trusted secp256k1 + Keccak256 to derive addresses from private keys,
-// then checks for 6-character prefix/suffix vanity patterns.
-// No untrusted computation — every step is verified Go crypto.
+// then checks for:
+//   - 7-character identical prefix/suffix
+//   - 6 consecutive "6"s or "8"s anywhere in the address
 package checker
 
 import (
 	"crypto/sha256"
+	"strings"
 
 	"github.com/mr-tron/base58"
 	"tron-address-generator/verify"
 )
 
-// MatchType indicates whether a vanity match is a prefix or suffix pattern.
 type MatchType int
 
 const (
-	Suffix6 MatchType = iota
-	Prefix6
+	Suffix7   MatchType = iota // last 7 chars identical
+	Prefix7                    // first 7 chars identical (after T)
+	SixSixes                  // six consecutive 6s
+	SixEights                 // six consecutive 8s
 )
 
-// Match holds a found vanity address along with its private key and metadata.
 type Match struct {
 	Address    string
 	PrivateKey string
 	Pattern    byte
 	Type       MatchType
-	VanityLen  int
 }
 
-// buildPayload constructs a 25-byte TRON base58check payload:
-//
-//	[0x41] + [20-byte address hash] + [4-byte double-SHA256 checksum]
 func buildPayload(hash20 []byte) []byte {
 	payload := make([]byte, 25)
 	payload[0] = 0x41
@@ -42,7 +40,6 @@ func buildPayload(hash20 []byte) []byte {
 	return payload
 }
 
-// checkLastN verifies that the last N characters of the address are identical.
 func checkLastN(address string, n int) (byte, bool) {
 	if len(address) < n+1 {
 		return 0, false
@@ -56,8 +53,6 @@ func checkLastN(address string, n int) (byte, bool) {
 	return c, true
 }
 
-// checkFirstN verifies that the first N characters after the leading 'T'
-// are identical (e.g., TAAAAA..., TNNNNN...).
 func checkFirstN(address string, n int) (byte, bool) {
 	if len(address) < n+1 {
 		return 0, false
@@ -71,35 +66,38 @@ func checkFirstN(address string, n int) (byte, bool) {
 	return c, true
 }
 
+func checkSixConsecutive(address string, target byte) bool {
+	return strings.Contains(address, strings.Repeat(string(target), 6))
+}
+
 // Check does the full address derivation and vanity pattern check.
-// All computation uses Go's trusted crypto libraries — secp256k1, Keccak256, SHA256.
-//
-// Returns nil if the private key is invalid (zero or >= curve order)
-// or if no 6-char prefix/suffix pattern is found.
 func Check(privateKey []byte) *Match {
-	// Step 1: Trusted secp256k1 derivation (decred library)
 	hash20 := verify.DeriveHash20(privateKey)
 	if hash20 == nil {
 		return nil
 	}
 
-	// Step 2: Build base58check payload
 	payload := buildPayload(hash20)
-
-	// Step 3: Encode to TRON base58check address
 	address := base58.Encode(payload)
 
-	// Step 4: Pattern matching — 6-char prefix or suffix
-	if c, ok := checkLastN(address, 6); ok {
-		return &Match{Address: address, PrivateKey: fmtHex(privateKey), Pattern: c, Type: Suffix6, VanityLen: 6}
+	// Priority 1: 7-char identical prefix/suffix
+	if c, ok := checkLastN(address, 7); ok {
+		return &Match{Address: address, PrivateKey: fmtHex(privateKey), Pattern: c, Type: Suffix7}
 	}
-	if c, ok := checkFirstN(address, 6); ok {
-		return &Match{Address: address, PrivateKey: fmtHex(privateKey), Pattern: c, Type: Prefix6, VanityLen: 6}
+	if c, ok := checkFirstN(address, 7); ok {
+		return &Match{Address: address, PrivateKey: fmtHex(privateKey), Pattern: c, Type: Prefix7}
+	}
+
+	// Priority 2: 6 consecutive 6s or 8s anywhere
+	if checkSixConsecutive(address, '6') {
+		return &Match{Address: address, PrivateKey: fmtHex(privateKey), Pattern: '6', Type: SixSixes}
+	}
+	if checkSixConsecutive(address, '8') {
+		return &Match{Address: address, PrivateKey: fmtHex(privateKey), Pattern: '8', Type: SixEights}
 	}
 	return nil
 }
 
-// fmtHex converts a byte slice to a lowercase hex string.
 func fmtHex(data []byte) string {
 	const hexChars = "0123456789abcdef"
 	out := make([]byte, len(data)*2)

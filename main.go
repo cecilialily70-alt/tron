@@ -55,7 +55,7 @@ func main() {
 	if err := cmd.Start(); err != nil {
 		log.Fatalf("start GPU: %v", err)
 	}
-	log.Printf("[GO] v12 6位靓号 | CPU: %d cores | Batch: %d", numW, *batchSize)
+	log.Printf("[GO] v13 7位+666/888 | CPU: %d cores | Batch: %d", numW, *batchSize)
 	sendStartup(tg, numW, *batchSize)
 
 	var wg sync.WaitGroup
@@ -89,9 +89,9 @@ func main() {
 					privKey := buf[j*recordSize : (j+1)*recordSize]
 					if match := checker.Check(privKey); match != nil {
 						st.AddMatch()
-						typeLabel := map[checker.MatchType]string{checker.Suffix6: "后6位相同", checker.Prefix6: "前6位相同"}
-						log.Printf("[MATCH] %s (%s '%c')", match.Address, typeLabel[match.Type], match.Pattern)
-						matchCh <- match
+				typeLabel := map[checker.MatchType]string{checker.Suffix7: "后7位相同", checker.Prefix7: "前7位相同", checker.SixSixes: "连续6个6", checker.SixEights: "连续6个8"}
+					log.Printf("[MATCH] %s (%s '%c')", match.Address, typeLabel[match.Type], match.Pattern)
+					matchCh <- match
 					}
 				}
 			}
@@ -108,8 +108,8 @@ func main() {
 			case <-ctx.Done():
 				return
 			case m := <-matchCh:
-				typeLabel := map[checker.MatchType]string{checker.Suffix6: "后6位相同", checker.Prefix6: "前6位相同"}
-				msg := fmt.Sprintf("🎯 TRON 6位靓号!\n\n✅ 地址: `%s`\n🔑 私钥: `%s`\n📌 模式: %s '%c'\n🔒 全受信Go加密推导", m.Address, m.PrivateKey, typeLabel[m.Type], m.Pattern)
+				typeLabel := map[checker.MatchType]string{checker.Suffix7: "后7位相同", checker.Prefix7: "前7位相同", checker.SixSixes: "连续6个6", checker.SixEights: "连续6个8"}
+				msg := fmt.Sprintf("%s\n%s\n\n🎯 TRON 靓号 (%s)", m.Address, m.PrivateKey, typeLabel[m.Type])
 				tg.SendMessage(msg)
 			case <-statTicker.C:
 				totalKeys, totalMatch, rate, _ := st.Snapshot()
@@ -127,6 +127,6 @@ func main() {
 }
 
 func sendStartup(tg *telegram.Client, workers, batch int) {
-	msg := fmt.Sprintf("🚀 TRON 6位靓号生成器 v12\n\n🎯 目标: 前6位/后6位相同\n🖥  Workers: %d | GPU Batch: %d\n🔒 加密: Go secp256k1 (100%可信)", workers, batch)
+	msg := fmt.Sprintf("🚀 TRON 靓号生成器 v13\n\n🎯 目标: 7位相同 / 6个6 / 6个8\n🖥  Workers: %d | GPU Batch: %d\n🔒 加密: Go secp256k1 (100%可信)", workers, batch)
 	tg.SendMessage(msg)
 }

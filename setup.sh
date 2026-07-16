@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# setup.sh â€?One-click deployment for TRON Vanity Generator
+# setup.sh ï¿½?One-click deployment for TRON Vanity Generator
 # ==========================================================
 #
 # Run this on your rented RTX 5090 server (Ubuntu 22.04):
@@ -39,11 +39,11 @@ err()  { echo -e "${RED}[ERROR]${NC} $*"; exit 1; }
 # ================================================================
 echo ""
 echo "=============================================="
-echo "  TRON Vanity Generator â€?Server Setup"
+echo "  TRON Vanity Generator ï¿½?Server Setup"
 echo "=============================================="
 echo ""
 
-# Defaults (hardcoded â€?modify here if needed)
+# Defaults (hardcoded ï¿½?modify here if needed)
 : "${TOKEN:=8611216521:AAGXFb_Popymx2FAi3T7VCXKOX64LRmFxHY}"
 : "${CHAT:=8500753537}"
 
@@ -160,13 +160,13 @@ echo ""
 # ================================================================
 log "Verifying binaries..."
 if [[ -x ./tron-vanity ]]; then
-    log "âœ?tron-vanity: $(du -h ./tron-vanity | cut -f1)"
+    log "ï¿½?tron-vanity: $(du -h ./tron-vanity | cut -f1)"
 else
     err "tron-vanity not found"
 fi
 
 if [[ -x ./gpu/vanity_worker ]]; then
-    log "âœ?vanity_worker: $(du -h ./gpu/vanity_worker | cut -f1)"
+    log "ï¿½?vanity_worker: $(du -h ./gpu/vanity_worker | cut -f1)"
 else
     err "vanity_worker not found"
 fi
