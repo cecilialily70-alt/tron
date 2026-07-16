@@ -50,7 +50,7 @@ int main(int argc, char **argv) {
     init_rng<<<batch/BLOCK, BLOCK>>>(d_rng, time(NULL));
     cudaDeviceSynchronize();
 
-    setvbuf(stdout, NULL, _IOFBF, 16*1024*1024);
+    setvbuf(stdout, NULL, _IOFBF, 64*1024*1024);
     for (;;) {
         gen_private_keys<<<batch/BLOCK, BLOCK>>>(d_out, d_rng, batch);
         cudaMemcpy(h_out, d_out, sz, cudaMemcpyDeviceToHost);

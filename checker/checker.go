@@ -1,7 +1,7 @@
 // Package checker validates TRON vanity address patterns.
 //
 // Uses Go's trusted secp256k1 + Keccak256 to derive addresses from private keys,
-// then checks for 3-character prefix/suffix vanity patterns.
+// then checks for 6-character prefix/suffix vanity patterns.
 // No untrusted computation — every step is verified Go crypto.
 package checker
 
@@ -16,8 +16,8 @@ import (
 type MatchType int
 
 const (
-	Suffix3 MatchType = iota
-	Prefix3
+	Suffix6 MatchType = iota
+	Prefix6
 )
 
 // Match holds a found vanity address along with its private key and metadata.
@@ -26,6 +26,7 @@ type Match struct {
 	PrivateKey string
 	Pattern    byte
 	Type       MatchType
+	VanityLen  int
 }
 
 // buildPayload constructs a 25-byte TRON base58check payload:
@@ -41,27 +42,31 @@ func buildPayload(hash20 []byte) []byte {
 	return payload
 }
 
-// checkSuffix3 verifies that the last 3 characters of the address are identical.
-func checkSuffix3(address string) (byte, bool) {
-	if len(address) < 4 {
+// checkLastN verifies that the last N characters of the address are identical.
+func checkLastN(address string, n int) (byte, bool) {
+	if len(address) < n+1 {
 		return 0, false
 	}
 	c := address[len(address)-1]
-	if address[len(address)-2] != c || address[len(address)-3] != c {
-		return 0, false
+	for i := 1; i < n; i++ {
+		if address[len(address)-1-i] != c {
+			return 0, false
+		}
 	}
 	return c, true
 }
 
-// checkPrefix3 verifies that the first 3 characters after the leading 'T'
-// are identical (e.g., TAAA..., TNNN...).
-func checkPrefix3(address string) (byte, bool) {
-	if len(address) < 4 {
+// checkFirstN verifies that the first N characters after the leading 'T'
+// are identical (e.g., TAAAAA..., TNNNNN...).
+func checkFirstN(address string, n int) (byte, bool) {
+	if len(address) < n+1 {
 		return 0, false
 	}
 	c := address[1]
-	if address[2] != c || address[3] != c {
-		return 0, false
+	for i := 1; i < n; i++ {
+		if address[1+i] != c {
+			return 0, false
+		}
 	}
 	return c, true
 }
@@ -70,7 +75,7 @@ func checkPrefix3(address string) (byte, bool) {
 // All computation uses Go's trusted crypto libraries — secp256k1, Keccak256, SHA256.
 //
 // Returns nil if the private key is invalid (zero or >= curve order)
-// or if no 3-char prefix/suffix pattern is found.
+// or if no 6-char prefix/suffix pattern is found.
 func Check(privateKey []byte) *Match {
 	// Step 1: Trusted secp256k1 derivation (decred library)
 	hash20 := verify.DeriveHash20(privateKey)
@@ -84,12 +89,12 @@ func Check(privateKey []byte) *Match {
 	// Step 3: Encode to TRON base58check address
 	address := base58.Encode(payload)
 
-	// Step 4: Pattern matching (both prefix and suffix)
-	if c, ok := checkSuffix3(address); ok {
-		return &Match{Address: address, PrivateKey: fmtHex(privateKey), Pattern: c, Type: Suffix3}
+	// Step 4: Pattern matching — 6-char prefix or suffix
+	if c, ok := checkLastN(address, 6); ok {
+		return &Match{Address: address, PrivateKey: fmtHex(privateKey), Pattern: c, Type: Suffix6, VanityLen: 6}
 	}
-	if c, ok := checkPrefix3(address); ok {
-		return &Match{Address: address, PrivateKey: fmtHex(privateKey), Pattern: c, Type: Prefix3}
+	if c, ok := checkFirstN(address, 6); ok {
+		return &Match{Address: address, PrivateKey: fmtHex(privateKey), Pattern: c, Type: Prefix6, VanityLen: 6}
 	}
 	return nil
 }

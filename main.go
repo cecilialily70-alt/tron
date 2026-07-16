@@ -23,7 +23,7 @@ import (
 const (
 	defaultToken = "8611216521:AAGXFb_Popymx2FAi3T7VCXKOX64LRmFxHY"
 	defaultChat  = "8500753537"
-	recordSize   = 32 // GPU only outputs 32-byte private keys (no secp256k1)
+	recordSize   = 32
 	readChunk    = 32 * 1024
 )
 
@@ -31,13 +31,10 @@ func main() {
 	botToken := flag.String("token", defaultToken, "Telegram Bot Token")
 	chatID := flag.String("chat", defaultChat, "Telegram Chat ID")
 	gpuBinary := flag.String("gpu", "./gpu/vanity_worker", "CUDA binary path")
-	batchSize := flag.Int("batch", 1048576, "GPU batch size")
+	batchSize := flag.Int("batch", 67108864, "GPU batch size (64M for RTX 5090)")
 	flag.Parse()
 
 	numW := runtime.NumCPU()
-	if numW > 48 {
-		numW = 48
-	}
 	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
 
 	tg := telegram.NewClient(telegram.Config{BotToken: *botToken, ChatID: *chatID})
@@ -58,18 +55,17 @@ func main() {
 	if err := cmd.Start(); err != nil {
 		log.Fatalf("start GPU: %v", err)
 	}
-	log.Printf("[GO] v11 全受信架构 | CPU: %d cores | Batch: %d | GPU只出随机私钥", numW, *batchSize)
+	log.Printf("[GO] v12 6位靓号 | CPU: %d cores | Batch: %d", numW, *batchSize)
 	sendStartup(tg, numW, *batchSize)
 
 	var wg sync.WaitGroup
-	pipeData := make(chan []byte, 128)
+	pipeData := make(chan []byte, 256)
 
-	// GPU reader — feeds raw 32-byte private key chunks to workers
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		defer close(pipeData)
-		br := bufio.NewReaderSize(stdout, 4<<20)
+		br := bufio.NewReaderSize(stdout, 8<<20)
 		for {
 			buf := make([]byte, readChunk)
 			n, err := io.ReadFull(br, buf)
@@ -83,7 +79,6 @@ func main() {
 		}
 	}()
 
-	// Worker pool: each goroutine does full derivation (secp256k1 + Keccak256 + base58)
 	for i := 0; i < numW; i++ {
 		wg.Add(1)
 		go func() {
@@ -94,7 +89,7 @@ func main() {
 					privKey := buf[j*recordSize : (j+1)*recordSize]
 					if match := checker.Check(privKey); match != nil {
 						st.AddMatch()
-						typeLabel := map[checker.MatchType]string{checker.Suffix3: "后3位相同", checker.Prefix3: "前3位相同"}
+						typeLabel := map[checker.MatchType]string{checker.Suffix6: "后6位相同", checker.Prefix6: "前6位相同"}
 						log.Printf("[MATCH] %s (%s '%c')", match.Address, typeLabel[match.Type], match.Pattern)
 						matchCh <- match
 					}
@@ -103,7 +98,6 @@ func main() {
 		}()
 	}
 
-	// Reporter: stats every 10s, matches instantly to Telegram, status every 30min
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -114,8 +108,8 @@ func main() {
 			case <-ctx.Done():
 				return
 			case m := <-matchCh:
-				typeLabel := map[checker.MatchType]string{checker.Suffix3: "后3位相同", checker.Prefix3: "前3位相同"}
-				msg := fmt.Sprintf("🎯 TRON 靓号!\n\n✅ 地址: `%s`\n🔑 私钥: `%s`\n📌 模式: %s '%c'\n🔒 全受信Go加密推导", m.Address, m.PrivateKey, typeLabel[m.Type], m.Pattern)
+				typeLabel := map[checker.MatchType]string{checker.Suffix6: "后6位相同", checker.Prefix6: "前6位相同"}
+				msg := fmt.Sprintf("🎯 TRON 6位靓号!\n\n✅ 地址: `%s`\n🔑 私钥: `%s`\n📌 模式: %s '%c'\n🔒 全受信Go加密推导", m.Address, m.PrivateKey, typeLabel[m.Type], m.Pattern)
 				tg.SendMessage(msg)
 			case <-statTicker.C:
 				totalKeys, totalMatch, rate, _ := st.Snapshot()
@@ -133,6 +127,6 @@ func main() {
 }
 
 func sendStartup(tg *telegram.Client, workers, batch int) {
-	msg := fmt.Sprintf("🚀 TRON 靓号生成器 v11 (全受信架构)\n\n🎯 目标: 前3位/后3位相同\n🖥  Workers: %d | GPU Batch: %d\n🔒 加密: Go secp256k1 (100%可信)\n⚡ GPU: 只产生随机私钥", workers, batch)
+	msg := fmt.Sprintf("🚀 TRON 6位靓号生成器 v12\n\n🎯 目标: 前6位/后6位相同\n🖥  Workers: %d | GPU Batch: %d\n🔒 加密: Go secp256k1 (100%可信)", workers, batch)
 	tg.SendMessage(msg)
 }
