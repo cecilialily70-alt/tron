@@ -55,7 +55,7 @@ func main() {
 	if err := cmd.Start(); err != nil {
 		log.Fatalf("start GPU: %v", err)
 	}
-	log.Printf("[GO] v13 7位+666/888 | CPU: %d cores | Batch: %d", numW, *batchSize)
+	log.Printf("[GO] v14 libsecp256k1 | CPU: %d cores | Batch: %d", numW, *batchSize)
 	sendStartup(tg, numW, *batchSize)
 
 	var wg sync.WaitGroup
@@ -89,9 +89,9 @@ func main() {
 					privKey := buf[j*recordSize : (j+1)*recordSize]
 					if match := checker.Check(privKey); match != nil {
 						st.AddMatch()
-				typeLabel := map[checker.MatchType]string{checker.Suffix7: "后7位相同", checker.Prefix7: "前7位相同", checker.SixSixes: "连续6个6", checker.SixEights: "连续6个8"}
-					log.Printf("[MATCH] %s (%s '%c')", match.Address, typeLabel[match.Type], match.Pattern)
-					matchCh <- match
+						typeLabel := map[checker.MatchType]string{checker.Suffix7: "后7位相同", checker.Prefix7: "前7位相同", checker.SixSixes: "连续6个6", checker.SixEights: "连续6个8"}
+						log.Printf("[MATCH] %s (%s '%c')", match.Address, typeLabel[match.Type], match.Pattern)
+						matchCh <- match
 					}
 				}
 			}
