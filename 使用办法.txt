@@ -1,0 +1,94 @@
+
+
+C:\Users\Administrator\Projects\tron-address-generator
+
+
+# 克隆新仓库
+cd ~
+git clone https://github.com/cecilialily70-alt/tron.git
+cd tron
+
+# 回到系统主目录
+cd ~
+
+# 彻底删除现在的 tron 文件夹
+rm -rf tron
+
+# 如果你之前按照我的提示改名备份过，顺手把备份也删了（保持清爽）
+rm -rf tron_old
+
+清理GPU
+
+# 强制终止 Go 主程序和 GPU 工作进程
+pkill -f tron-vanity
+pkill -f vanity_worker
+
+# 检查一下 GPU 是否已经空闲
+nvidia-smi
+
+1. 备份旧文件夹并重新拉取
+Bash
+# 回到主目录
+cd ~
+
+# 把原来的旧文件夹改名为 tron_old 备份起来
+mv tron tron_old
+
+# 重新拉取最新的代码（这次就不会报错了）
+git clone https://github.com/cecilialily70-alt/tron.git
+
+# 进入新的项目目录
+cd tron
+2. 编译新代码 (适配 RTX 5090)
+Bash
+make clean
+make CUDA_ARCH=sm_90a
+(看到 OK tron-vanity 说明编译成功)
+
+3. 使用 Tmux 开启后台挂机
+Bash
+# 创建一个名为 tron_v9 的后台会话
+tmux new -s tron_v9
+
+# 在新窗口中启动程序
+./tron-vanity -batch 1048576
+4. 安全退出挂机
+看到程序跑起来后：
+
+按下键盘上的 Ctrl 和 B 键。
+
+松开双手。
+
+按下 D 键。
+
+这样你的程序就在后台全速狂飙了！
+
+
+1. 如果你已经在该会话内
+如果你当前正处于这个 [tron_v1] 的窗口中，最简单的办法是直接关闭该会话：
+
+在终端输入 exit 并回车。
+
+会话会自动销毁并退出。
+
+2. 如果你在会话外（或者想强制删除）
+如果你在其他窗口，或者上面的方法没能删除，可以使用以下命令强制清理：
+
+查看所有存在的会话：
+
+Bash
+tmux ls
+这会列出所有后台运行的会话，确认 tron_v1 是否在列表中。
+
+强制关闭该会话：
+
+Bash
+tmux kill-session -t tron_v1
+执行这条命令后，名为 tron_v1 的后台任务会立即被终止并销毁，底部的绿色状态栏也会消失。
+
+3. 如果你想清理所有 tmux 会话
+如果你想一次性清理掉服务器上所有的 tmux 窗口（通常在调试环境很常用），可以使用：
+
+Bash
+tmux kill-server
+这会杀掉所有的 tmux 进程并关闭所有会话。
