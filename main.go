@@ -58,6 +58,11 @@ func main() {
 	log.Printf("[GO] 架构 v10 | CPU Cores: %d | Batch: %d", numW, *batchSize)
 	sendStartup(tg, numW, *batchSize)
 
+	// Log every verification failure (GPU output didn't match trusted derivation)
+	checker.VerifyFailHook = func(addr string) {
+		log.Printf("[WARN] 验签未通过! 地址 %s 的私钥不匹配，已丢弃", addr)
+	}
+
 	var wg sync.WaitGroup
 	pipeData := make(chan []byte, 128)
 
@@ -107,7 +112,8 @@ func main() {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		ticker := time.NewTicker(30 * time.Minute)
+		statTicker := time.NewTicker(10 * time.Second)
+		reportTicker := time.NewTicker(30 * time.Minute)
 		for {
 			select {
 			case <-ctx.Done(): return
@@ -115,7 +121,10 @@ func main() {
 				typeLabel := map[checker.MatchType]string{checker.Suffix3: "后3位相同", checker.Prefix3: "前3位相同"}
 				msg := fmt.Sprintf("🎯 TRON 靓号 (3位验证版)!\n\n✅ 地址: `%s`\n🔑 私钥: `%s`\n📌 模式: %s '%c'\n🔒 私钥已校验，地址匹配", m.Address, m.PrivateKey, typeLabel[m.Type], m.Pattern)
 				tg.SendMessage(msg)
-			case <-ticker.C:
+			case <-statTicker.C:
+				totalKeys, totalMatch, rate, _ := st.Snapshot()
+				log.Printf("[STATS] 已处理: %d 个密钥 | 命中: %d | 速率: %s", totalKeys, totalMatch, stats.FormatRate(rate))
+			case <-reportTicker.C:
 				tg.SendMessage(st.ReportMessage())
 			}
 		}

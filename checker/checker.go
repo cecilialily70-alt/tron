@@ -22,6 +22,10 @@ const (
 	Prefix3
 )
 
+// VerifyFailHook is called when a pattern candidate fails private key
+// verification. Set from main to log suspicious GPU output.
+var VerifyFailHook func(address string)
+
 // Match holds a found vanity address along with its private key and metadata.
 type Match struct {
 	Address    string
@@ -110,6 +114,9 @@ func CheckFull(privateKey, hash20 []byte) *Match {
 
 	// Verification ONLY on pattern match candidates
 	if !verifyMatch(privateKey, hash20) {
+		if VerifyFailHook != nil {
+			VerifyFailHook(address)
+		}
 		return nil
 	}
 
