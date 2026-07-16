@@ -9,8 +9,7 @@ import (
 type MatchType int
 
 const (
-	Suffix4 MatchType = iota
-	Prefix4
+	Suffix7 MatchType = iota
 	SixSixes
 	SixEights
 )
@@ -35,35 +34,19 @@ func checkLastN(address string, n int) (byte, bool) {
 	return c, true
 }
 
-func checkFirstN(address string, n int) (byte, bool) {
-	if len(address) < n+1 {
-		return 0, false
-	}
-	c := address[1]
-	for i := 1; i < n; i++ {
-		if address[1+i] != c {
-			return 0, false
-		}
-	}
-	return c, true
-}
-
 func Check(privateKey []byte) *Match {
 	addr := verify.DeriveAddress(privateKey)
 	if addr == "" {
 		return nil
 	}
 
-	if c, ok := checkLastN(addr, 4); ok {
-		return &Match{Address: addr, PrivateKey: fmtHex(privateKey), Pattern: c, Type: Suffix4}
+	if c, ok := checkLastN(addr, 7); ok {
+		return &Match{Address: addr, PrivateKey: fmtHex(privateKey), Pattern: c, Type: Suffix7}
 	}
-	if c, ok := checkFirstN(addr, 4); ok {
-		return &Match{Address: addr, PrivateKey: fmtHex(privateKey), Pattern: c, Type: Prefix4}
-	}
-	if strings.Contains(addr, "666666") {
+	if strings.HasSuffix(addr, "666666") {
 		return &Match{Address: addr, PrivateKey: fmtHex(privateKey), Pattern: '6', Type: SixSixes}
 	}
-	if strings.Contains(addr, "888888") {
+	if strings.HasSuffix(addr, "888888") {
 		return &Match{Address: addr, PrivateKey: fmtHex(privateKey), Pattern: '8', Type: SixEights}
 	}
 	return nil
