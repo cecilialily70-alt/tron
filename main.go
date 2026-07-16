@@ -31,7 +31,7 @@ func main() {
 	botToken := flag.String("token", defaultToken, "Telegram Bot Token")
 	chatID := flag.String("chat", defaultChat, "Telegram Chat ID")
 	gpuBinary := flag.String("gpu", "./gpu/vanity_worker", "CUDA binary path")
-	batchSize := flag.Int("batch", 67108864, "GPU batch size (64M for RTX 5090)")
+	batchSize := flag.Int("batch", 67108864, "GPU batch size")
 	flag.Parse()
 
 	numW := runtime.NumCPU()
@@ -89,8 +89,8 @@ func main() {
 					privKey := buf[j*recordSize : (j+1)*recordSize]
 					if match := checker.Check(privKey); match != nil {
 						st.AddMatch()
-						typeLabel := map[checker.MatchType]string{checker.Suffix7: "后7位相同", checker.Prefix7: "前7位相同", checker.SixSixes: "连续6个6", checker.SixEights: "连续6个8"}
-						log.Printf("[MATCH] %s (%s '%c')", match.Address, typeLabel[match.Type], match.Pattern)
+						typeLabel := map[checker.MatchType]string{checker.Suffix5: "后5位相同", checker.Prefix5: "前5位相同"}
+						log.Printf("[MATCH] %s (%s)", match.Address, typeLabel[match.Type])
 						matchCh <- match
 					}
 				}
@@ -108,8 +108,8 @@ func main() {
 			case <-ctx.Done():
 				return
 			case m := <-matchCh:
-				typeLabel := map[checker.MatchType]string{checker.Suffix7: "后7位相同", checker.Prefix7: "前7位相同", checker.SixSixes: "连续6个6", checker.SixEights: "连续6个8"}
-				msg := fmt.Sprintf("%s\n%s\n\n🎯 TRON 靓号 (%s)", m.Address, m.PrivateKey, typeLabel[m.Type])
+				typeLabel := map[checker.MatchType]string{checker.Suffix5: "后5位相同", checker.Prefix5: "前5位相同"}
+				msg := fmt.Sprintf("%s\n%s\n\n🎯 TRON 5位靓号 (%s)", m.Address, m.PrivateKey, typeLabel[m.Type])
 				tg.SendMessage(msg)
 			case <-statTicker.C:
 				totalKeys, totalMatch, rate, _ := st.Snapshot()
@@ -127,6 +127,6 @@ func main() {
 }
 
 func sendStartup(tg *telegram.Client, workers, batch int) {
-	msg := fmt.Sprintf("🚀 TRON 靓号生成器 v13\n\n🎯 目标: 7位相同 / 6个6 / 6个8\n🖥  Workers: %d | GPU Batch: %d\n🔒 加密: Go secp256k1 (100%可信)", workers, batch)
+	msg := fmt.Sprintf("🚀 TRON 5位靓号生成器 v14 (libsecp256k1)\n\n🎯 目标: 前5位/后5位相同\n🖥  Workers: %d | GPU Batch: %d\n🔒 加密: Bitcoin Core C 库", workers, batch)
 	tg.SendMessage(msg)
 }
