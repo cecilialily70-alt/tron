@@ -1,234 +1,208 @@
-# TRON Vanity Address Generator �?GPU-Accelerated (RTX 5090)
+# TRON 靓号地址生成器 v15
 
-GPU-accelerated TRON (TRC20/USDT) vanity address generator. Uses NVIDIA CUDA on an **RTX 5090 (32 GB)** to generate millions of keys per second, finding addresses where the **first 3 or last 3 characters are identical** (e.g., `TAAA...`, `T...111`).
+GPU 加速的 TRON (TRC20/USDT) 靓号地址生成器。利用 NVIDIA CUDA **RTX 5090 (32 GB)** 生成海量随机私钥，通过 **libsecp256k1（Bitcoin Core C 库）** 推导地址，匹配 7 位连续相同字符或 6 个 6 / 6 个 8 的靓号。
 
-Matches are sent **instantly** to your Telegram chat. Status reports every **30 minutes**.
+所有私钥推导均使用受信任的 Bitcoin 核心加密库，结果 100% 正确。
 
-**Key verification**: every generated address is re-derived from its private key using Go's trusted secp256k1 library to guarantee 100% correctness.
+命中的靓号**实时推送**到 Telegram。每 30 分钟发送一次状态报告。
 
-## Architecture
+---
+
+## 匹配规则
+
+| 优先级 | 模式 | 地址示例 |
+|--------|------|----------|
+| 1 | 后 7 位相同 | `Txxxxxxxxx...AAAAAAA` |
+| 2 | 前 7 位相同 | `TAAAAAAA...xxxxx` |
+| 3 | 连续 6 个 6 | `Txx666666xxx...` |
+| 4 | 连续 6 个 8 | `Txx888888xxx...` |
+
+---
+
+## 架构
 
 ```
-┌──────────────────────────�?    stdout pipe (52B/record)       ┌──────────────────────�?
-�?  CUDA Binary             �?────────────────────────────────�?�?  Go Orchestrator     �?
-�?  (gpu/vanity_worker)     �?   32B key + 20B raw hash        �?  (tron-vanity)       �?
-�?                          �?                                   �?                      �?
-�?  RTX 5090 GPU:           �?                                   �?  Goroutine pool:     �?
-�?  �?cuRAND �?private keys �?                                   �?  �?Checker workers   �?
-�?  �?secp256k1 �?pubkeys   �?                                   �?  �?Base58 encode     �?
-�?  �?Keccak-256 �?hashes   �?                                   �?  �?Pattern match     �?
-�?  �?Batch: 4M keys        �?                                   �?  �?Telegram send     �?
-└──────────────────────────�?                                   �?  �?30-min reporter   �?
-                                                                └──────────────────────�?
+GPU cuRAND           Go 调度器             加密推导               匹配检查
+(随机私钥 32B)  -->  (30 核并发)  -->  libsecp256k1 (Bitcoin)  -->  Base58 编码
+                                       + Keccak-256              + 7位/666/888 匹配
+                                       (受信任 C 库)              + Telegram 推送
 ```
 
-## One-Click Setup (on your rented server)
+GPU 不参与任何加密计算，只负责快速生成随机数。所有地址推导均使用 Go + libsecp256k1，确保私钥与地址完全匹配。
+
+---
+
+## 首次部署
+
+### 1. 安装依赖
 
 ```bash
-# 1. Upload project to server
-scp -r tron-address-generator user@146.115.17.138:~/
+# 安装 libsecp256k1（Bitcoin 核心加密库）
+sudo apt update && sudo apt install -y libsecp256k1-dev
 
-# 2. SSH into server
-ssh user@146.115.17.138
-
-# 3. Run setup
-cd ~/tron-address-generator
-bash setup.sh
+# 确保 CUDA 和 Go 已安装
+nvcc --version
+go version
 ```
 
-The script will:
-- Detect your RTX 5090 automatically
-- Install Go 1.22 (if needed)
-- Install CUDA Toolkit (if needed)
-- Build everything
-- Start the generator
-
-**Credentials used:**
-- Token: `8611216521:AAGXFb_Popymx2FAi3T7VCXKOX64LRmFxHY`
-- Chat ID: `8500753537`
-
-## Manual Build
-
-### Requirements
-
-| Component | Version |
-|-----------|---------|
-| Ubuntu | 22.04 |
-| Go | 1.21+ |
-| CUDA Toolkit | 13.0 (or 12.6) |
-| NVIDIA Driver | 550+ |
-
-### Steps
+### 2. 克隆项目并编译
 
 ```bash
-# 1. Install dependencies (if not using setup.sh)
-sudo apt update
-sudo apt install golang-go -y
-
-# For CUDA, follow NVIDIA's official guide:
-# https://developer.nvidia.com/cuda-downloads
-
-# 2. Clone the project
-git clone https://github.com/huahuade/tron-address-generator.git
-cd tron-address-generator
-
-# 3. Build (auto-detects GPU architecture)
+cd ~
+git clone https://github.com/cecilialily70-alt/tron.git
+cd tron
+go mod tidy
 make
-
-# 4. Run
-./tron-vanity -token "8611216521:AAGXFb_Popymx2FAi3T7VCXKOX64LRmFxHY" -chat "8500753537"
+CGO_ENABLED=1 go build -o tron-vanity main.go
 ```
 
-### Custom GPU Architecture
-
-The Makefile auto-detects your GPU via `nvidia-smi`. To override:
+### 3. 启动程序
 
 ```bash
-# RTX 5090 (Blackwell, compute capability 12.0)
-make CUDA_ARCH=sm_120
-
-# RTX 4090 (Ada Lovelace)
-make CUDA_ARCH=sm_89
-
-# H100 (Hopper)
-make CUDA_ARCH=sm_90a
+tmux new -s tron
+./tron-vanity -batch 134217728
 ```
 
-## Tuning for Your Server
+看到启动日志后按 `Ctrl+B` 松手再按 `D` 脱离 tmux 会话，程序在后台持续运行。
 
-Your server specs: **RTX 5090 / 32 GB VRAM / 48 CPU cores / 56 GB RAM**
+### 4. 确认运行
 
-| Parameter | Default | Notes |
-|-----------|---------|-------|
-| GPU batch | 4,194,304 (4M) | Uses ~660 MB VRAM per batch |
-| CPU workers | 48 (capped) | One per allocated core |
-| Channel buffer | 262,144 records | ~13 MB heap |
+检查 Telegram，应该已收到启动通知：
 
-To adjust at runtime:
+```
+🚀 TRON 靓号生成器 v15
+
+🎯 目标: 7位相同 / 6个6 / 6个8
+🖥  Workers: 30 | GPU Batch: 134217728
+🔒 加密: libsecp256k1 (Bitcoin C库)
+```
+
+---
+
+## 参数说明
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `-batch` | `67108864` (64M) | GPU 每批次生成的私钥数量 |
+| `-token` | 已内置 | Telegram Bot Token |
+| `-chat` | 已内置 | Telegram 接收消息的 Chat ID |
+
+### 批次大小与显存占用
+
+| 批次大小 | 显存占用 | 适用显卡 |
+|----------|----------|----------|
+| 33554432 (32M) | ~1 GB | RTX 3090 (24 GB) |
+| 67108864 (64M) | ~2 GB | RTX 4090 / 5090 |
+| 134217728 (128M) | ~4 GB | RTX 5090 (32 GB) |
 
 ```bash
-./tron-vanity \
-  -token "YOUR_TOKEN" \
-  -chat "YOUR_CHAT_ID" \
-  -batch 8388608 \
-  -workers 48
+# 自定义批次
+./tron-vanity -batch 134217728
 ```
 
-### VRAM Budget
+---
 
-| Batch Size | Device VRAM | Host RAM |
-|-----------|-------------|---------|
-| 1M (1<<20) | ~170 MB | ~160 MB |
-| 4M (4<<20) | ~660 MB | ~640 MB |
-| 8M (8<<20) | ~1.3 GB | ~1.3 GB |
-| 16M (16<<20) | ~2.6 GB | ~2.5 GB |
+## 常用操作命令
 
-## Output
-
-### Telegram Messages
-
-**Startup:**
-```
-🚀 TRON 3位靓号生成器已启�?
-
-🎯 目标: �?�?�?位相�?(3位数靓号)
-🖥  CPU Workers: 48
-📦 GPU Batch: 4194304
-�?状态报�? �?30 分钟
-```
-
-**Match found (instant):**
-```
-🎯 发现 TRON 靓号 (3�?�?
-
-🔹 地址: `TXXXxXXxXXxXXxXXxXXxXXxXXxAAAAA`
-🔑 私钥: `a1b2c3d4e5f6...`
-📌 模式: �?�?�?位相�?
-🔒 私钥已校�?
-```
-
-**30-minute report:**
-```
-📊 TRON Vanity Generator 状态报�?
-
-�? 运行时间: 2h30m15s
-🔑 已生成密�? 45000000000
-�?发现靓号: 3
-�?当前速率: 5.12 M/s
-```
-
-## Performance Expectations (RTX 5090)
-
-| Metric | Value |
-|--------|-------|
-| Expected keys/sec | 5-20 M/s |
-| Time to find 3-char vanity | ~2-10 minutes (avg) |
-| GPU VRAM used (4M batch) | ~660 MB |
-| CPU usage | ~15% of 48 cores |
-
-## Project Structure
-
-```
-tron-address-generator/
-├── main.go                      # Go orchestrator
-├── go.mod                       # Go module
-├── Makefile                     # Build system (auto-detects GPU)
-├── setup.sh                     # One-click deployment script
-├── README.md                    # This file
-├── cmd/
-�?  └── gen_precompute/
-�?      └── main.go              # Generator for precomputed G multiples
-├── gpu/
-�?  ├── vanity.cu                # CUDA kernels (secp256k1, Keccak-256)
-�?  └── precomputed_g.h          # Auto-generated G multiples header
-├── telegram/
-�?  └── telegram.go              # Telegram Bot API client
-├── checker/
-�?  └── checker.go               # CPU-side vanity pattern checker
-└── stats/
-    └── stats.go                 # Statistics + 30-min reporter
-```
-
-## Monitoring
+### 查看运行状态
 
 ```bash
-# Watch GPU utilization
-watch -n 1 nvidia-smi
+# 回到 tmux 会话看实时日志
+tmux attach -t tron
 
-# Watch application logs
-tail -f tron-vanity-*.log
+# 查看 GPU 使用情况
+nvidia-smi
 
-# Check if running
+# 查看进程是否在跑
 ps aux | grep tron-vanity
-
-# Stop
-kill $(cat tron-vanity.pid)
 ```
 
-## Troubleshooting
+### 停止程序
 
-### CUDA compilation errors
-- Verify nvcc version: `nvcc --version`
-- CUDA 13.0 may not be in NVIDIA's repo yet. Use `setup.sh` which auto-selects 12.6 as fallback.
-- Confirm GPU is visible: `nvidia-smi`
-
-### "no CUDA-capable device detected"
 ```bash
-sudo nvidia-persistenced --user nvidia-persistenced
-sudo nvidia-smi -pm 1
+# 杀掉所有相关进程
+pkill -9 tron-vanity
+pkill -9 vanity_worker
+
+# 关闭 tmux 会话
+tmux kill-server
 ```
 
-### Telegram messages not arriving
-- Verify you messaged the bot with `/start` first
-- Check Chat ID: message `@userinfobot` on Telegram
+### 服务器重启后恢复
 
-### Low GPU utilization
-- Increase batch size: `-batch 8388608`
-- The bottleneck may be PCIe bandwidth (stdout pipe). Try `-batch 16777216`.
+```bash
+cd ~/tron
+tmux new -s tron
+./tron-vanity -batch 134217728
+```
 
-## Security Notice
+### 重新编译（拉取最新代码后）
 
-**Private keys are transmitted in plaintext via Telegram.** This is for learning/vanity purposes. Do not use generated addresses for significant real funds.
+```bash
+cd ~/tron
+git pull
+make
+CGO_ENABLED=1 go build -o tron-vanity main.go
+```
+
+### 查看 Git 提交记录
+
+```bash
+cd ~/tron
+git log --oneline -5
+```
+
+---
+
+## Telegram 消息格式
+
+**启动通知：**
+```
+🚀 TRON 靓号生成器 v15
+
+🎯 目标: 7位相同 / 6个6 / 6个8
+🖥  Workers: 30 | GPU Batch: 134217728
+🔒 加密: libsecp256k1 (Bitcoin C库)
+```
+
+**命中靓号（实时推送）：**
+```
+TNNNNNNNxxxxx...
+a1b2c3d4e5f6...
+
+🎯 TRON 靓号 (前7位相同)
+```
+
+纯文本两行：地址在上、私钥在下，Telegram 直接点击即可全选复制。
+
+**30 分钟状态报告：**
+```
+📊 TRON Vanity Generator 状态报告
+
+⏱  运行时间: 2h30m15s
+🔑 已生成密钥: 45000000000
+✅ 发现靓号: 3
+⚡ 当前速率: 1.02 M/s
+```
+
+---
+
+## 速率参考
+
+| 加密引擎 | 速率 | 7 位靓号预计时间 |
+|----------|------|------------------|
+| libsecp256k1 (C 库) | ~1 M/s | 数小时 |
+
+---
+
+## 安全说明
+
+- 私钥通过 Telegram 明文传输，仅用于学习/靓号收藏目的
+- 不建议在生成的地址中存放大额资产
+- 加密推导使用 Bitcoin Core 的 libsecp256k1 库，已被审计十余年
+- 所有计算均在本地完成，私钥不经过任何外部服务
+
+---
 
 ## License
 
