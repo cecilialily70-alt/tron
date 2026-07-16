@@ -18,14 +18,13 @@ import (
 	"tron-address-generator/checker"
 	"tron-address-generator/stats"
 	"tron-address-generator/telegram"
-	"golang.org/x/crypto/sha3"
 )
 
 const (
 	defaultToken = "8611216521:AAGXFb_Popymx2FAi3T7VCXKOX64LRmFxHY"
 	defaultChat  = "8500753537"
-	recordSize   = 96 // 关键！适配 GPU 发来的 96 字节
-	readChunk    = 96 * 1024
+	recordSize   = 32 // GPU only outputs 32-byte private keys (no secp256k1)
+	readChunk    = 32 * 1024
 )
 
 func main() {
@@ -53,19 +52,19 @@ func main() {
 	cmd := exec.CommandContext(ctx, *gpuBinary, "--batch", fmt.Sprintf("%d", *batchSize))
 	cmd.Stderr = os.Stderr
 	stdout, err := cmd.StdoutPipe()
-	if err != nil { log.Fatalf("pipe: %v", err) }
-	if err := cmd.Start(); err != nil { log.Fatalf("start GPU: %v", err) }
-	log.Printf("[GO] 架构 v10 | CPU Cores: %d | Batch: %d", numW, *batchSize)
-	sendStartup(tg, numW, *batchSize)
-
-	// Log every verification failure (GPU output didn't match trusted derivation)
-	checker.VerifyFailHook = func(addr string) {
-		log.Printf("[WARN] 验签未通过! 地址 %s 的私钥不匹配，已丢弃", addr)
+	if err != nil {
+		log.Fatalf("pipe: %v", err)
 	}
+	if err := cmd.Start(); err != nil {
+		log.Fatalf("start GPU: %v", err)
+	}
+	log.Printf("[GO] v11 全受信架构 | CPU: %d cores | Batch: %d | GPU只出随机私钥", numW, *batchSize)
+	sendStartup(tg, numW, *batchSize)
 
 	var wg sync.WaitGroup
 	pipeData := make(chan []byte, 128)
 
+	// GPU reader — feeds raw 32-byte private key chunks to workers
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -78,30 +77,25 @@ func main() {
 				pipeData <- buf[:n]
 				st.AddKeys(uint64(n / recordSize))
 			}
-			if err != nil { return }
+			if err != nil {
+				return
+			}
 		}
 	}()
 
+	// Worker pool: each goroutine does full derivation (secp256k1 + Keccak256 + base58)
 	for i := 0; i < numW; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			k := sha3.NewLegacyKeccak256() // 彻底抛弃 CPU 的 secp256k1，只做极速哈希
 			for buf := range pipeData {
 				n := len(buf) / recordSize
 				for j := 0; j < n; j++ {
-					record := buf[j*recordSize : (j+1)*recordSize]
-					privKey := record[:32]
-					pubKeyXY := record[32:96]
-
-					k.Reset()
-					k.Write(pubKeyXY)
-					hash20 := k.Sum(nil)[12:32]
-
-					if match := checker.CheckFull(privKey, hash20); match != nil {
+					privKey := buf[j*recordSize : (j+1)*recordSize]
+					if match := checker.Check(privKey); match != nil {
 						st.AddMatch()
 						typeLabel := map[checker.MatchType]string{checker.Suffix3: "后3位相同", checker.Prefix3: "前3位相同"}
-						log.Printf("[GO] VERIFIED + 私钥已校验! %s (%s '%c')", match.Address, typeLabel[match.Type], match.Pattern)
+						log.Printf("[MATCH] %s (%s '%c')", match.Address, typeLabel[match.Type], match.Pattern)
 						matchCh <- match
 					}
 				}
@@ -109,6 +103,7 @@ func main() {
 		}()
 	}
 
+	// Reporter: stats every 10s, matches instantly to Telegram, status every 30min
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -116,14 +111,15 @@ func main() {
 		reportTicker := time.NewTicker(30 * time.Minute)
 		for {
 			select {
-			case <-ctx.Done(): return
+			case <-ctx.Done():
+				return
 			case m := <-matchCh:
 				typeLabel := map[checker.MatchType]string{checker.Suffix3: "后3位相同", checker.Prefix3: "前3位相同"}
-				msg := fmt.Sprintf("🎯 TRON 靓号 (3位验证版)!\n\n✅ 地址: `%s`\n🔑 私钥: `%s`\n📌 模式: %s '%c'\n🔒 私钥已校验，地址匹配", m.Address, m.PrivateKey, typeLabel[m.Type], m.Pattern)
+				msg := fmt.Sprintf("🎯 TRON 靓号!\n\n✅ 地址: `%s`\n🔑 私钥: `%s`\n📌 模式: %s '%c'\n🔒 全受信Go加密推导", m.Address, m.PrivateKey, typeLabel[m.Type], m.Pattern)
 				tg.SendMessage(msg)
 			case <-statTicker.C:
 				totalKeys, totalMatch, rate, _ := st.Snapshot()
-				log.Printf("[STATS] 已处理: %d 个密钥 | 命中: %d | 速率: %s", totalKeys, totalMatch, stats.FormatRate(rate))
+				log.Printf("[STATS] 已处理: %d | 命中: %d | 速率: %s", totalKeys, totalMatch, stats.FormatRate(rate))
 			case <-reportTicker.C:
 				tg.SendMessage(st.ReportMessage())
 			}
@@ -137,6 +133,6 @@ func main() {
 }
 
 func sendStartup(tg *telegram.Client, workers, batch int) {
-	msg := fmt.Sprintf("🚀 TRON 3位靓号生成器 v10\n\n🎯 目标: 前3位/后3位相同 (3位数靓号)\n🖥  Workers: %d | GPU Batch: %d\n🔒 私钥校验: 强制验证(secp256k1)\n⚡ 计算模式: GPU推导 + CPU验签", workers, batch)
+	msg := fmt.Sprintf("🚀 TRON 靓号生成器 v11 (全受信架构)\n\n🎯 目标: 前3位/后3位相同\n🖥  Workers: %d | GPU Batch: %d\n🔒 加密: Go secp256k1 (100%可信)\n⚡ GPU: 只产生随机私钥", workers, batch)
 	tg.SendMessage(msg)
 }
