@@ -1,9 +1,9 @@
 // Package checker validates TRON vanity address patterns and verifies
 // that generated private keys correctly correspond to their addresses.
 //
-// Always performs full base58 encoding for every candidate, then checks both
-// prefix and suffix 3-char patterns. All matches are verified by re-deriving
-// the address from the private key using Go's trusted crypto libraries.
+// Hot path: base58 encode every key, check prefix+suffix patterns.
+// Verification (secp256k1 re-derivation) runs ONLY on pattern matches (~1/1682 keys),
+// keeping throughput at millions per second.
 package checker
 
 import (
@@ -68,40 +68,57 @@ func checkPrefix3(address string) (byte, bool) {
 	return c, true
 }
 
+// verifyMatch re-derives the hash20 from the private key using Go's trusted
+// secp256k1 + Keccak256 and compares with the GPU-derived hash20.
+// Returns true only if the private key correctly controls this address.
+//
+// This is EXPENSIVE (~100-500us per call). Only call on pattern matches.
+func verifyMatch(privateKey, hash20 []byte) bool {
+	derived := verify.DeriveHash20(privateKey)
+	if derived == nil {
+		return false
+	}
+	return bytes.Equal(hash20, derived)
+}
+
 // CheckFull validates a potential vanity address candidate.
 //
-// Process:
-//  1. Build base58check payload from GPU-derived hash20
-//  2. Full base58 encoding of the payload
-//  3. CRITICAL: re-derive hash20 from private key using trusted Go crypto
-//     and compare — rejects any key-address mismatch
-//  4. Check suffix 3-char pattern
-//  5. Check prefix 3-char pattern
-//  6. Return match only if verification passes AND a pattern is found
+// Hot path (every key, must be fast):
+//  1. Build base58check payload (SHA256x2, <1us)
+//  2. Base58 encode (big.Int, ~5-10us)
+//  3. Check suffix + prefix patterns (string compare, nanoseconds)
+//
+// Verification path (only on pattern matches, ~1/1682 keys):
+//  4. Re-derive hash20 from private key using trusted Go crypto (~100us)
+//  5. Reject if mismatch (GPU computation error)
 func CheckFull(privateKey, hash20 []byte) *Match {
 	payload := buildPayload(hash20)
 	address := base58.Encode(payload)
 
-	// === CRITICAL VERIFICATION ===
-	// Re-derive the address from the private key using Go's trusted
-	// secp256k1 + Keccak256 implementation. This guarantees the private
-	// key actually controls this address on the TRON blockchain.
-	derivedHash20 := verify.DeriveHash20(privateKey)
-	if derivedHash20 == nil {
-		return nil
-	}
-	if !bytes.Equal(hash20, derivedHash20) {
+	// Fast pattern check — no secp256k1 in this path
+	var matchType MatchType
+	var pattern byte
+	if c, ok := checkSuffix3(address); ok {
+		matchType = Suffix3
+		pattern = c
+	} else if c, ok := checkPrefix3(address); ok {
+		matchType = Prefix3
+		pattern = c
+	} else {
 		return nil
 	}
 
-	// === Pattern matching ===
-	if c, ok := checkSuffix3(address); ok {
-		return &Match{Address: address, PrivateKey: fmtHex(privateKey), Pattern: c, Type: Suffix3}
+	// Verification ONLY on pattern match candidates
+	if !verifyMatch(privateKey, hash20) {
+		return nil
 	}
-	if c, ok := checkPrefix3(address); ok {
-		return &Match{Address: address, PrivateKey: fmtHex(privateKey), Pattern: c, Type: Prefix3}
+
+	return &Match{
+		Address:    address,
+		PrivateKey: fmtHex(privateKey),
+		Pattern:    pattern,
+		Type:       matchType,
 	}
-	return nil
 }
 
 // fmtHex converts a byte slice to a lowercase hex string.
