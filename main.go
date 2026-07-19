@@ -55,7 +55,7 @@ func main() {
 	if err := cmd.Start(); err != nil {
 		log.Fatalf("start GPU: %v", err)
 	}
-	log.Printf("[GO] v16 C-hotpath | CPU: %d cores | Batch: %d", numW, *batchSize)
+	log.Printf("[GO] v17 C-hotpath | CPU: %d cores | Batch: %d", numW, *batchSize)
 	sendStartup(tg, numW, *batchSize)
 
 	var wg sync.WaitGroup
@@ -89,8 +89,7 @@ func main() {
 					privKey := buf[j*recordSize : (j+1)*recordSize]
 					if match := checker.Check(privKey); match != nil {
 						st.AddMatch()
-						typeLabel := map[checker.MatchType]string{checker.Suffix7: "后7位相同", checker.SixSixes: "连续6个6", checker.SixEights: "连续6个8"}
-						log.Printf("[MATCH] %s (%s '%c')", match.Address, typeLabel[match.Type], match.Pattern)
+						log.Printf("[MATCH] %s (尾6位相同 '%c')", match.Address, match.Pattern)
 						matchCh <- match
 					}
 				}
@@ -108,8 +107,7 @@ func main() {
 			case <-ctx.Done():
 				return
 			case m := <-matchCh:
-				typeLabel := map[checker.MatchType]string{checker.Suffix7: "后7位相同", checker.SixSixes: "连续6个6", checker.SixEights: "连续6个8"}
-				msg := fmt.Sprintf("%s\n%s\n\n🎯 TRON 靓号 (%s)", m.Address, m.PrivateKey, typeLabel[m.Type])
+				msg := fmt.Sprintf("%s\n%s\n\n🎯 TRON 靓号 (尾6位相同)", m.Address, m.PrivateKey)
 				tg.SendMessage(msg)
 			case <-statTicker.C:
 				totalKeys, totalMatch, rate, _ := st.Snapshot()
@@ -127,6 +125,6 @@ func main() {
 }
 
 func sendStartup(tg *telegram.Client, workers, batch int) {
-	msg := fmt.Sprintf("🚀 TRON 靓号生成器 v16\n\n🎯 目标: 尾号7位相同 / 6个6 / 6个8\n🖥  Workers: %d | GPU Batch: %d\n🔒 加密: libsecp256k1 + C Keccak + C Base58\n⚡ 全C热路径，单次CGo调用", workers, batch)
+	msg := fmt.Sprintf("🚀 TRON 靓号生成器 v17\n\n🎯 目标: 尾号6位相同 (任意字符)\n🖥  Workers: %d | GPU Batch: %d\n🔒 加密: libsecp256k1 + C Keccak + C Base58\n⚡ 全C热路径，单次CGo调用", workers, batch)
 	tg.SendMessage(msg)
 }

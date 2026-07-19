@@ -1,26 +1,16 @@
 package checker
 
 import (
-	"strings"
-
 	"tron-address-generator/verify"
-)
-
-type MatchType int
-
-const (
-	Suffix7 MatchType = iota
-	SixSixes
-	SixEights
 )
 
 type Match struct {
 	Address    string
 	PrivateKey string
-	Pattern    byte
-	Type       MatchType
+	Pattern    byte // the repeated character
 }
 
+// checkLastN verifies that the last N characters of a string are all the same.
 func checkLastN(address string, n int) (byte, bool) {
 	if len(address) < n+1 {
 		return 0, false
@@ -34,20 +24,16 @@ func checkLastN(address string, n int) (byte, bool) {
 	return c, true
 }
 
+// Check returns a Match if the private key yields an address whose last 6
+// characters are all identical (e.g. ...AAAAAA, ...111111, ...666666).
 func Check(privateKey []byte) *Match {
 	addr := verify.DeriveAddress(privateKey)
 	if addr == "" {
 		return nil
 	}
 
-	if c, ok := checkLastN(addr, 7); ok {
-		return &Match{Address: addr, PrivateKey: fmtHex(privateKey), Pattern: c, Type: Suffix7}
-	}
-	if strings.HasSuffix(addr, "666666") {
-		return &Match{Address: addr, PrivateKey: fmtHex(privateKey), Pattern: '6', Type: SixSixes}
-	}
-	if strings.HasSuffix(addr, "888888") {
-		return &Match{Address: addr, PrivateKey: fmtHex(privateKey), Pattern: '8', Type: SixEights}
+	if c, ok := checkLastN(addr, 6); ok {
+		return &Match{Address: addr, PrivateKey: fmtHex(privateKey), Pattern: c}
 	}
 	return nil
 }
